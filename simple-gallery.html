@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ПРОСТАЯ ГАЛЕРЕЯ</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .gallery { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+        .image { border: 2px solid #ccc; padding: 10px; text-align: center; }
+        img { max-width: 100%; height: 200px; object-fit: contain; }
+    </style>
+</head>
+<body>
+    <h1>МОИ КАРТИНКИ С GITHUB</h1>
+    
+    <div class="gallery" id="gallery">
+        <!-- Картинки появятся здесь -->
+    </div>
+    
+    <script>
+        // ⚠️ ДОБАВЬ СЮДА ВСЕ СВОИ КАРТИНКИ!
+        const images = [
+            'Group-1.png',
+            'photo1.jpg', 
+            'photo2.jpg'
+            // Добавь ещё файлы здесь!
+        ];
+        
+        // Сортируем Z→A
+        images.sort((a, b) => b.localeCompare(a));
+        
+        // Показываем картинки
+        const gallery = document.getElementById('gallery');
+        
+        images.forEach(imgName => {
+            const url = `https://segej-x7.github.io/gallery/images/${imgName}`;
+            
+            const div = document.createElement('div');
+            div.className = 'image';
+            div.innerHTML = `
+                <img src="${url}" alt="${imgName}">
+                <h3>${imgName}</h3>
+                <button onclick="copyLink('${url}')">Копировать ссылку</button>
+                <a href="${url}" download>Скачать</a>
+            `;
+            
+            gallery.appendChild(div);
+        });
+        
+        function copyLink(url) {
+            navigator.clipboard.writeText(url);
+            alert('Скопировано: ' + url);
+        }
+    </script>
+</body>
+</html>

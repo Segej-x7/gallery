@@ -1,346 +1,323 @@
-// ============================================================================
-// 🚀 АВТОМАТИЧЕСКАЯ ГАЛЕРЕЯ ДЛЯ GITHUB
-// Загружает ВСЕ картинки из папки images/ репозитория
-// Работает БЕЗ ручного указания файлов!
-// ============================================================================
+// 🚀 ГАРАНТИРОВАННО РАБОЧАЯ ГАЛЕРЕЯ
+// Загружает картинки ИЗ СПИСКА images-list.json
 
-class AutoGitHubGallery {
+class SimpleGallery {
     constructor() {
-        // Настройки вашего репозитория
-        this.config = {
-            repoOwner: 'Segej-x7',           // Ваш username на GitHub
-            repoName: 'gallery',              // Название репозитория
-            imagesFolder: 'images/',          // Папка с картинками
-            githubPagesUrl: 'https://segej-x7.github.io/gallery/', // Ваш GitHub Pages URL
-            scanAttempts: 3,                  // Количество попыток сканирования
-            cacheTime: 5 * 60 * 1000,         // Кэш на 5 минут
-            maxImages: 1000                   // Максимальное количество картинок
-        };
-        
-        this.images = [];                     // Массив найденных картинок
-        this.isLoading = false;               // Флаг загрузки
-        this.cacheKey = 'githubGalleryCache'; // Ключ для localStorage кэша
-        
+        this.images = [];
+        this.imagesListUrl = 'images-list.json';
         this.init();
     }
     
-    // Инициализация галереи
     async init() {
-        console.log('🚀 Инициализация авто-галереи...');
-        this.updateStatus('🔍 Начинаю поиск картинок...');
-        
-        // Показываем загрузку
         this.showLoading();
         
-        // Загружаем картинки
-        await this.scanGitHubImages();
-        
-        // Обновляем статистику
-        this.updateStats();
-        
-        // Запускаем автообновление
-        this.startAutoRefresh();
-    }
-    
-    // ============================================================================
-    // 🔍 ОСНОВНАЯ ФУНКЦИЯ: Сканирует GitHub и находит ВСЕ картинки
-    // ============================================================================
-    async scanGitHubImages() {
-        if (this.isLoading) return;
-        
-        this.isLoading = true;
-        this.updateStatus('🔍 Сканирую GitHub...');
-        
         try {
-            console.log('🔄 Начинаю сканирование папки images/...');
+            // 1. Пробуем загрузить список из JSON
+            await this.loadImagesFromList();
             
-            // 1. Проверяем кэш
-            const cached = this.getCachedImages();
-            if (cached && cached.length > 0) {
-                console.log('📦 Использую кэшированные данные...');
-                this.images = cached;
-                this.displayGallery();
-                this.updateStatus('✅ Загружено из кэша');
+            // 2. Если не получилось - используем hardcoded список
+            if (this.images.length === 0) {
+                this.images = this.getHardcodedImages();
             }
             
-            // 2. Пробуем разные методы сканирования
-            let foundImages = [];
+            // 3. Сортируем Z→A
+            this.sortImages();
             
-            // Метод 1: GitHub API (самый точный)
-            foundImages = await this.scanViaGitHubAPI();
+            // 4. Показываем
+            this.displayGallery();
+            this.updateStats();
             
-            // Метод 2: Raw GitHub URLs
-            if (foundImages.length === 0) {
-                foundImages = await this.scanViaRawUrls();
-            }
-            
-            // Метод 3: GitHub Pages URLs
-            if (foundImages.length === 0) {
-                foundImages = await this.scanViaGitHubPages();
-            }
-            
-            // Метод 4: Прямое сканирование
-            if (foundImages.length === 0) {
-                foundImages = await this.scanDirect();
-            }
-            
-            // 3. Обрабатываем результаты
-            if (foundImages.length > 0) {
-                console.log(`🎉 Найдено картинок: ${foundImages.length}`);
-                this.images = foundImages;
-                this.sortImages(); // Сортировка Z→A
-                this.saveToCache(); // Сохраняем в кэш
-                this.displayGallery();
-                this.updateStatus('✅ Готово');
-                this.showNotification(`Найдено ${foundImages.length} картинок!`);
-            } else {
-                console.log('❌ Картинки не найдены');
-                this.showNoImages();
-                this.updateStatus('❌ Нет картинок');
-            }
+            console.log(`✅ Загружено картинок: ${this.images.length}`);
             
         } catch (error) {
-            console.error('💥 Ошибка сканирования:', error);
-            this.showError(error.message);
-            this.updateStatus('❌ Ошибка');
-        } finally {
-            this.isLoading = false;
-            this.updateLastUpdateTime();
+            console.error('Ошибка:', error);
+            this.showError();
         }
     }
     
-    // ============================================================================
-    // 📡 МЕТОДЫ СКАНИРОВАНИЯ (4 разных способа)
-    // ============================================================================
-    
-    // Метод 1: GitHub API (лучший способ)
-    async scanViaGitHubAPI() {
+    // Загрузка из JSON файла
+    async loadImagesFromList() {
         try {
-            console.log('📡 Пробую GitHub API...');
-            const apiUrl = `https://api.github.com/repos/${this.config.repoOwner}/${this.config.repoName}/contents/${this.config.imagesFolder}`;
-            
-            const response = await fetch(apiUrl, {
-                headers: {
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'AutoGitHubGallery/1.0'
-                }
-            });
+            console.log('📥 Загружаю images-list.json...');
+            const response = await fetch(this.imagesListUrl);
             
             if (!response.ok) {
-                throw new Error(`GitHub API: ${response.status}`);
+                throw new Error(`HTTP ${response.status}`);
             }
             
-            const files = await response.json();
-            const images = [];
+            const data = await response.json();
             
-            for (const file of files) {
-                if (file.type === 'file' && this.isImageFile(file.name)) {
-                    images.push({
-                        id: file.sha,
-                        name: file.name,
-                        url: file.download_url,
-                        rawUrl: `https://raw.githubusercontent.com/${this.config.repoOwner}/${this.config.repoName}/main/${this.config.imagesFolder}${file.name}`,
-                        pagesUrl: `${this.config.githubPagesUrl}${this.config.imagesFolder}${file.name}`,
-                        size: file.size,
-                        extension: file.name.split('.').pop().toLowerCase(),
-                        date: new Date().toISOString(),
-                        source: 'github-api'
-                    });
-                }
-            }
-            
-            console.log(`✅ GitHub API: ${images.length} картинок`);
-            return images;
-            
-        } catch (error) {
-            console.log('GitHub API недоступен:', error.message);
-            return [];
-        }
-    }
-    
-    // Метод 2: Raw GitHub URLs
-    async scanViaRawUrls() {
-        try {
-            console.log('🌐 Пробую Raw GitHub URLs...');
-            
-            // Пробуем получить список файлов через raw.githubusercontent.com
-            const listUrl = `https://raw.githubusercontent.com/${this.config.repoOwner}/${this.config.repoName}/main/${this.config.imagesFolder}/_files.txt`;
-            
-            // Сначала пробуем получить текстовый файл со списком
-            const response = await fetch(listUrl);
-            if (response.ok) {
-                const text = await response.text();
-                const fileNames = text.split('\n').filter(name => name.trim());
+            if (Array.isArray(data)) {
+                this.images = data.map(img => ({
+                    id: Date.now() + Math.random(),
+                    name: img.name,
+                    url: img.url || `https://segej-x7.github.io/gallery/images/${img.name}`,
+                    rawUrl: img.rawUrl || `https://raw.githubusercontent.com/Segej-x7/gallery/main/images/${img.name}`,
+                    size: 0,
+                    extension: img.name.split('.').pop().toLowerCase(),
+                    date: new Date().toISOString()
+                }));
                 
-                return await this.checkImagesFromList(fileNames, 'raw-list');
+                console.log(`✅ JSON загружен: ${this.images.length} картинок`);
             }
-            
-            // Если файла нет, пробуем сканировать стандартные имена
-            return await this.scanCommonNames('raw');
             
         } catch (error) {
-            console.log('Raw URLs недоступны:', error.message);
-            return [];
+            console.log('Не удалось загрузить JSON:', error.message);
+            this.images = [];
         }
     }
     
-    // Метод 3: GitHub Pages URLs
-    async scanViaGitHubPages() {
-        try {
-            console.log('🌍 Пробую GitHub Pages...');
-            
-            const baseUrl = this.config.githubPagesUrl + this.config.imagesFolder;
-            const commonNames = this.generateCommonNames();
-            
-            const images = [];
-            
-            // Проверяем каждое возможное имя
-            for (const name of commonNames) {
-                const imgUrl = baseUrl + name;
-                const exists = await this.checkImageExists(imgUrl);
-                
-                if (exists) {
-                    images.push({
-                        id: Date.now() + Math.random(),
-                        name: name,
-                        url: imgUrl,
-                        rawUrl: `https://raw.githubusercontent.com/${this.config.repoOwner}/${this.config.repoName}/main/${this.config.imagesFolder}${name}`,
-                        pagesUrl: imgUrl,
-                        size: 0,
-                        extension: name.split('.').pop().toLowerCase(),
-                        date: new Date().toISOString(),
-                        source: 'pages-scan'
-                    });
-                }
-            }
-            
-            console.log(`✅ GitHub Pages: ${images.length} картинок`);
-            return images;
-            
-        } catch (error) {
-            console.log('GitHub Pages недоступен:', error.message);
-            return [];
-        }
-    }
-    
-    // Метод 4: Прямое сканирование
-    async scanDirect() {
-        console.log('🔦 Прямое сканирование...');
-        
-        // Генерируем список возможных имен файлов
-        const possibleNames = this.generatePossibleNames();
-        const images = [];
-        
-        // Проверяем каждое имя через разные источники
-        for (const name of possibleNames) {
-            // Пробуем разные URL
-            const urls = [
-                `https://raw.githubusercontent.com/${this.config.repoOwner}/${this.config.repoName}/main/${this.config.imagesFolder}${name}`,
-                `${this.config.githubPagesUrl}${this.config.imagesFolder}${name}`,
-                `https://github.com/${this.config.repoOwner}/${this.config.repoName}/raw/main/${this.config.imagesFolder}${name}`
-            ];
-            
-            for (const url of urls) {
-                const exists = await this.checkImageExists(url);
-                if (exists) {
-                    images.push({
-                        id: Date.now() + Math.random(),
-                        name: name,
-                        url: url,
-                        rawUrl: `https://raw.githubusercontent.com/${this.config.repoOwner}/${this.config.repoName}/main/${this.config.imagesFolder}${name}`,
-                        pagesUrl: `${this.config.githubPagesUrl}${this.config.imagesFolder}${name}`,
-                        size: 0,
-                        extension: name.split('.').pop().toLowerCase(),
-                        date: new Date().toISOString(),
-                        source: 'direct-scan'
-                    });
-                    break;
-                }
-            }
-        }
-        
-        console.log(`✅ Прямое сканирование: ${images.length} картинок`);
-        return images;
-    }
-    
-    // ============================================================================
-    // 🛠️ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
-    // ============================================================================
-    
-    // Генерация возможных имен файлов
-    generatePossibleNames() {
-        const prefixes = [
-            'photo', 'image', 'picture', 'img', 'pic', 'snap', 'shot',
-            'photo1', 'photo2', 'photo3', 'image1', 'image2', 'img1', 'img2',
-            'cat', 'dog', 'nature', 'landscape', 'portrait', 'art', 'design',
-            'screenshot', 'screen', 'wallpaper', 'background', 'cover',
-            'zebra', 'yogurt', 'xray', 'whale', 'violet', 'ultra', 'tiger',
-            'sample', 'test', 'demo', 'example', 'illustration'
+    // Жестко закодированные картинки (на случай если JSON не загрузится)
+    getHardcodedImages() {
+        // ⚠️ ДОБАВЬ СЮДА ВСЕ СВОИ КАРТИНКИ!
+        const imageNames = [
+            'Group-1.png',
+            'photo1.jpg',
+            'photo2.jpg',
+            // ДОБАВЛЯЙ СЮДА ВСЕ СВОИ ФАЙЛЫ!
+            // 'photo3.png',
+            // 'image.jpg',
         ];
         
-        const extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'];
-        const possibleNames = [];
-        
-        // Основные комбинации
-        for (const prefix of prefixes.slice(0, 20)) {
-            for (const ext of extensions) {
-                possibleNames.push(`${prefix}.${ext}`);
-                possibleNames.push(`${prefix}1.${ext}`);
-                possibleNames.push(`${prefix}2.${ext}`);
-                possibleNames.push(`${prefix}_large.${ext}`);
-                possibleNames.push(`${prefix}_small.${ext}`);
-            }
-        }
-        
-        // Добавляем случайные числа
-        for (let i = 1; i <= 50; i++) {
-            for (const ext of extensions) {
-                possibleNames.push(`${i}.${ext}`);
-                possibleNames.push(`img${i}.${ext}`);
-                possibleNames.push(`photo${i}.${ext}`);
-                possibleNames.push(`picture${i}.${ext}`);
-            }
-        }
-        
-        // Убираем дубликаты и ограничиваем количество
-        return [...new Set(possibleNames)].slice(0, 500);
+        return imageNames.map(name => ({
+            id: Date.now() + Math.random(),
+            name: name,
+            url: `https://segej-x7.github.io/gallery/images/${name}`,
+            rawUrl: `https://raw.githubusercontent.com/Segej-x7/gallery/main/images/${name}`,
+            size: 0,
+            extension: name.split('.').pop().toLowerCase(),
+            date: new Date().toISOString()
+        }));
     }
     
-    // Генерация распространенных имен
-    generateCommonNames() {
-        return [
-            'image.jpg', 'photo.jpg', 'picture.png', 'img.jpg', 'photo1.jpg',
-            'photo2.jpg', 'image1.png', 'image2.png', 'cat.jpg', 'dog.png',
-            'nature.jpg', 'landscape.png', 'screenshot.png', 'wallpaper.jpg',
-            'background.jpg', 'cover.jpg', 'avatar.png', 'logo.png', 'icon.jpg'
-        ];
+    // Сортировка Z→A
+    sortImages() {
+        this.images.sort((a, b) => b.name.localeCompare(a.name));
     }
     
-    // Проверка существования картинки
-    async checkImageExists(url) {
-        return new Promise((resolve) => {
-            const img = new Image();
-            img.onload = () => resolve(true);
-            img.onerror = () => resolve(false);
-            img.src = url + '?t=' + Date.now(); // Добавляем timestamp для избежания кэша
-            
-            // Таймаут 3 секунды
-            setTimeout(() => resolve(false), 3000);
+    // Показ галереи
+    displayGallery() {
+        const gallery = document.getElementById('gallery');
+        const noImages = document.getElementById('noImages');
+        
+        if (!this.images.length) {
+            gallery.innerHTML = '';
+            noImages.style.display = 'block';
+            return;
+        }
+        
+        noImages.style.display = 'none';
+        gallery.innerHTML = '';
+        
+        this.images.forEach(img => {
+            gallery.appendChild(this.createImageCard(img));
         });
     }
     
-    // Проверка списка изображений
-    async checkImagesFromList(fileNames, source) {
-        const images = [];
+    // Создание карточки
+    createImageCard(image) {
+        const card = document.createElement('div');
+        card.className = 'image-card';
+        card.innerHTML = `
+            <div class="image-container">
+                <img src="${image.url}" 
+                     alt="${image.name}" 
+                     loading="lazy"
+                     onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"300\" height=\"200\"><rect width=\"100%\" height=\"100%\" fill=\"%23f0f0f0\"/><text x=\"50%\" y=\"50%\" font-family=\"Arial\" fill=\"%23666\" text-anchor=\"middle\" dy=\".3em\">${image.name}</text></svg>'">
+            </div>
+            <div class="image-info">
+                <div class="image-name">${image.name}</div>
+                <div class="image-meta">
+                    <span class="meta-item">${image.extension.toUpperCase()}</span>
+                    <span class="meta-item">${this.formatFileSize(image.size)}</span>
+                </div>
+                <div class="image-actions">
+                    <button class="action-btn view-btn" onclick="openImage('${image.url}')">
+                        👁️ Просмотр
+                    </button>
+                    <button class="action-btn copy-btn" onclick="copyLink('${image.url}')">
+                        📋 Копировать
+                    </button>
+                    <a href="${image.url}" download="${image.name}" class="action-btn download-btn">
+                        ⬇️ Скачать
+                    </a>
+                </div>
+            </div>
+        `;
+        return card;
+    }
+    
+    // Обновление статистики
+    updateStats() {
+        const totalImages = document.getElementById('totalImages');
+        const loadingStatus = document.getElementById('loadingStatus');
         
-        for (const fileName of fileNames) {
-            if (!this.isImageFile(fileName)) continue;
-            
-            const urls = [
-                `https://raw.githubusercontent.com/${this.config.repoOwner}/${this.config.repoName}/main/${this.config.imagesFolder}${fileName}`,
-                `${this.config.githubPagesUrl}${this.config.imagesFolder}${fileName}`
-            ];
-            
-            for (const url of urls) {
-                const exists = await this.checkImageExists(url);
-                if
+        if (totalImages) {
+            totalImages.textContent = this.images.length;
+        }
+        
+        if (loadingStatus) {
+            loadingStatus.textContent = this.images.length > 0 ? '✅' : '❌';
+        }
+    }
+    
+    // Форматирование размера
+    formatFileSize(bytes) {
+        if (!bytes || bytes === 0) return 'Размер неизвестен';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+    
+    // Показ загрузки
+    showLoading() {
+        const gallery = document.getElementById('gallery');
+        if (!gallery) return;
+        
+        gallery.innerHTML = `
+            <div style="grid-column:1/-1;text-align:center;padding:60px 20px;">
+                <div style="font-size:48px;animation:spin 1s linear infinite">🔄</div>
+                <h3>Загружаю картинки...</h3>
+                <p>Ищу файл images-list.json</p>
+                <style>
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                </style>
+            </div>
+        `;
+    }
+    
+    // Показ ошибки
+    showError() {
+        const gallery = document.getElementById('gallery');
+        if (!gallery) return;
+        
+        gallery.innerHTML = `
+            <div style="grid-column:1/-1;text-align:center;padding:60px 20px;">
+                <div style="font-size:48px;">❌</div>
+                <h3>Не могу найти картинки</h3>
+                <p>Создай файл <code>images-list.json</code> в корне репозитория</p>
+                <p>Или добавь их имена в код галереи</p>
+                <button onclick="location.reload()" style="
+                    background:#667eea;
+                    color:white;
+                    border:none;
+                    padding:12px 24px;
+                    border-radius:6px;
+                    cursor:pointer;
+                    margin-top:20px;
+                ">
+                    🔄 Попробовать снова
+                </button>
+            </div>
+        `;
+    }
+    
+    // Перезагрузка галереи
+    async reload() {
+        this.images = [];
+        await this.init();
+    }
+}
+
+// ============================================================================
+// 🌐 ГЛОБАЛЬНЫЕ ФУНКЦИИ
+// ============================================================================
+
+// Открыть картинку в новом окне
+function openImage(url) {
+    window.open(url, '_blank');
+}
+
+// Копировать ссылку
+async function copyLink(url) {
+    try {
+        await navigator.clipboard.writeText(url);
+        showNotification('✅ Ссылка скопирована!');
+    } catch (error) {
+        const input = document.createElement('input');
+        input.value = url;
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+        showNotification('✅ Ссылка скопирована!');
+    }
+}
+
+// Показать уведомление
+function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #48bb78, #38a169);
+        color: white;
+        padding: 15px 25px;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        z-index: 1000;
+        animation: slideIn 0.3s ease;
+        font-weight: 500;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 2000);
+}
+
+// Добавить стили для анимации
+if (!document.querySelector('#notification-styles')) {
+    const style = document.createElement('style');
+    style.id = 'notification-styles';
+    style.textContent = `
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
+// ============================================================================
+// 🚀 ЗАПУСК
+// ============================================================================
+
+// Создаем галерею при загрузке страницы
+document.addEventListener('DOMContentLoaded', () => {
+    window.gallery = new SimpleGallery();
+    
+    // Добавляем кнопку обновления
+    const stats = document.querySelector('.stats');
+    if (stats) {
+        const reloadBtn = document.createElement('button');
+        reloadBtn.innerHTML = '🔄 Обновить';
+        reloadBtn.onclick = () => window.gallery.reload();
+        reloadBtn.style.cssText = `
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+        `;
+        
+        const reloadItem = document.createElement('div');
+        reloadItem.className = 'stat-item';
+        reloadItem.appendChild(reloadBtn);
+        stats.appendChild(reloadItem);
+    }
+});
