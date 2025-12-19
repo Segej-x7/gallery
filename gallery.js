@@ -1,178 +1,106 @@
-// Локальная галерея изображений
-// Работает полностью в браузере без бэкенда
-
-class LocalImageGallery {
+// Галерея, которая показывает изображения из папки на GitHub
+class GitHubGallery {
     constructor() {
         this.images = [];
-        this.storageKey = 'localImageGallery';
-        this.maxFileSize = 5 * 1024 * 1024; // 5MB максимум
+        this.imagesFolder = 'images/';
+        this.githubRepo = 'https://github.com/Segej-x7/gallery';
+        this.githubPagesUrl = 'https://segej-x7.github.io/gallery/';
         this.init();
     }
 
-    init() {
-        // Загружаем изображения из localStorage
-        this.loadFromStorage();
-        
-        // Показываем галерею
+    async init() {
+        await this.loadImagesFromGitHub();
         this.displayGallery();
-        
-        // Добавляем обработчик для drag and drop
-        this.setupDragAndDrop();
-        
-        // Обновляем статистику
         this.updateStats();
-        
-        console.log(`Галерея инициализирована, загружено ${this.images.length} изображений`);
+        console.log('Галерея загружена');
     }
 
-    // Загрузка из localStorage
-    loadFromStorage() {
+    // Загрузка списка изображений из GitHub
+    async loadImagesFromGitHub() {
         try {
-            const saved = localStorage.getItem(this.storageKey);
-            if (saved) {
-                const parsed = JSON.parse(saved);
-                this.images = parsed || [];
-                console.log(`Загружено ${this.images.length} изображений из хранилища`);
-            }
-        } catch (error) {
-            console.error('Ошибка загрузки из localStorage:', error);
-            this.images = [];
-            this.saveToStorage(); // Создаем чистый массив
-        }
-    }
-
-    // Сохранение в localStorage
-    saveToStorage() {
-        try {
-            // Ограничиваем количество изображений для предотвращения переполнения
-            const imagesToSave = this.images.map(img => ({
-                id: img.id,
+            showLoading();
+            
+            // Если есть доступ к GitHub API (для получения списка файлов)
+            // Если нет - используем ручной список
+            const imageList = await this.getImageList();
+            
+            // Формируем данные для каждого изображения
+            this.images = imageList.map((img, index) => ({
+                id: index + 1,
                 name: img.name,
-                size: img.size,
-                type: img.type,
-                data: img.data, // Data URL
-                date: img.date,
-                // Не сохраняем Blob URL
+                url: `${this.githubPagesUrl}${this.imagesFolder}${img.name}`,
+                path: `${this.imagesFolder}${img.name}`,
+                size: img.size || 'Неизвестно',
+                extension: img.name.split('.').pop().toLowerCase()
             }));
             
-            localStorage.setItem(this.storageKey, JSON.stringify(imagesToSave));
-            console.log(`Сохранено ${imagesToSave.length} изображений в localStorage`);
+            // Сортируем от Z до A (от большего к меньшему)
+            this.sortImages();
+            
         } catch (error) {
-            console.error('Ошибка сохранения в localStorage:', error);
-            if (error.name === 'QuotaExceededError') {
-                alert('Превышен лимит хранилища. Попробуйте удалить некоторые изображения.');
-            }
+            console.error('Ошибка загрузки:', error);
+            showError();
         }
     }
 
-    // Обработка выбора файлов
-    handleFileSelect(event) {
-        const files = event.target.files;
-        if (!files.length) return;
-
-        this.processFiles(Array.from(files));
-        event.target.value = ''; // Сбрасываем input
-    }
-
-    // Обработка файлов
-    async processFiles(files) {
-        const imageFiles = files.filter(file => {
-            const isValidType = file.type.startsWith('image/');
-            const isValidSize = file.size <= this.maxFileSize;
-            const isValidExtension = /\.(jpg|jpeg|png|gif|webp|svg|bmp)$/i.test(file.name);
+    // Получение списка изображений
+    async getImageList() {
+        try {
+            // Пробуем получить через GitHub API
+            const apiUrl = 'https://api.github.com/repos/Segej-x7/gallery/contents/images';
+            const response = await fetch(apiUrl);
             
-            if (!isValidSize) {
-                alert(`Файл "${file.name}" слишком большой. Максимальный размер: 5MB`);
-                return false;
+            if (response.ok) {
+                const data = await response.json();
+                // Фильтруем только изображения
+                return data.filter(item => 
+                    item.type === 'file' && 
+                    /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(item.name)
+                ).map(item => ({
+                    name: item.name,
+                    size: this.formatFileSize(item.size)
+                }));
             }
-            
-            return isValidType && isValidExtension;
-        });
-
-        if (imageFiles.length === 0) {
-            alert('Пожалуйста, выберите только изображения (JPG, PNG, GIF, WebP, SVG, BMP) до 5MB каждый');
-            return;
+        } catch (error) {
+            console.log('GitHub API не доступен, используем ручной метод');
         }
-
-        // Показываем загрузку
-        this.showLoading();
-
-        // Обрабатываем каждое изображение
-        let addedCount = 0;
-        for (const file of imageFiles) {
-            try {
-                await this.addImage(file);
-                addedCount++;
-            } catch (error) {
-                console.error('Ошибка обработки файла:', file.name, error);
-                alert(`Не удалось обработать файл "${file.name}": ${error.message}`);
-            }
-        }
-
-        // Обновляем отображение
-        this.displayGallery();
-        this.updateStats();
         
-        // Сохраняем
-        this.saveToStorage();
-        
-        // Показываем уведомление
-        if (addedCount > 0) {
-            this.showNotification(`Добавлено ${addedCount} изображений`);
-        }
+        // Ручной метод - получаем список из скрытого файла или создаем его
+        return await this.getManualImageList();
     }
 
-    // Добавление изображения
-    async addImage(file) {
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
+    // Ручной список изображений
+    async getManualImageList() {
+        try {
+            // Создаем файл images-list.js со списком изображений
+            const images = [
+                {name: 'example1.jpg', size: '245760'},
+                {name: 'example2.png', size: '153600'}
+                // Добавляйте сюда свои изображения
+            ];
             
-            reader.onload = (e) => {
+            // Проверяем, есть ли реальные изображения
+            const validImages = [];
+            
+            for (const img of images) {
                 try {
-                    // Проверяем, не существует ли уже изображение с таким именем
-                    const existingIndex = this.images.findIndex(img => 
-                        img.name.toLowerCase() === file.name.toLowerCase()
-                    );
-                    
-                    if (existingIndex !== -1) {
-                        // Обновляем существующее изображение
-                        this.images[existingIndex] = {
-                            ...this.images[existingIndex],
-                            size: file.size,
-                            type: file.type,
-                            data: e.target.result,
-                            date: new Date().toISOString()
-                        };
-                    } else {
-                        // Создаем новое изображение
-                        const imageData = {
-                            id: Date.now() + Math.random().toString(36).substr(2, 9),
-                            name: file.name,
-                            size: file.size,
-                            type: file.type,
-                            data: e.target.result, // Data URL
-                            date: new Date().toISOString()
-                        };
-
-                        // Добавляем в массив
-                        this.images.push(imageData);
+                    const imgUrl = `${this.githubPagesUrl}${this.imagesFolder}${img.name}`;
+                    const response = await fetch(imgUrl, { method: 'HEAD' });
+                    if (response.ok) {
+                        validImages.push(img);
                     }
-                    
-                    // Сортируем от большего к меньшему по имени
-                    this.sortImages();
-                    
-                    resolve();
-                } catch (error) {
-                    reject(error);
+                } catch (e) {
+                    // Пропускаем несуществующие файлы
                 }
-            };
+            }
             
-            reader.onerror = () => reject(new Error('Ошибка чтения файла'));
-            reader.readAsDataURL(file);
-        });
+            return validImages;
+        } catch (error) {
+            return [];
+        }
     }
 
-    // Сортировка изображений от Z до A
+    // Сортировка от Z до A
     sortImages() {
         this.images.sort((a, b) => {
             return b.name.localeCompare(a.name, 'ru', { sensitivity: 'base' });
@@ -191,8 +119,6 @@ class LocalImageGallery {
         }
         
         noImages.style.display = 'none';
-        
-        // Очищаем и заполняем галерею
         gallery.innerHTML = '';
         
         this.images.forEach(image => {
@@ -201,32 +127,18 @@ class LocalImageGallery {
         });
     }
 
-    // Создание карточки изображения
+    // Создание карточки
     createImageCard(image) {
         const card = document.createElement('div');
         card.className = 'image-card';
         card.dataset.id = image.id;
         
-        // Форматируем размер
         const size = this.formatFileSize(image.size);
-        
-        // Форматируем дату
-        const date = new Date(image.date).toLocaleDateString('ru-RU', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-        
-        // Проверяем, валиден ли Data URL
-        const imageSrc = image.data && image.data.startsWith('data:image/') 
-            ? image.data 
-            : 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="200"><rect width="100%" height="100%" fill="%23f6f8fa"/><text x="50%" y="50%" font-family="Arial" font-size="14" fill="%23999" text-anchor="middle" dy=".3em">Изображение повреждено</text></svg>';
+        const extension = image.extension.toUpperCase();
         
         card.innerHTML = `
             <div class="image-container">
-                <img src="${imageSrc}" alt="${image.name}" loading="lazy" 
+                <img src="${image.url}" alt="${image.name}" loading="lazy"
                      onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"200\"><rect width=\"100%\" height=\"100%\" fill=\"%23f6f8fa\"/><text x=\"50%\" y=\"50%\" font-family=\"Arial\" font-size=\"14\" fill=\"%23999\" text-anchor=\"middle\" dy=\".3em\">${image.name}</text></svg>'">
             </div>
             <div class="image-info">
@@ -234,18 +146,18 @@ class LocalImageGallery {
                     📄 ${image.name}
                 </div>
                 <div class="image-size">
-                    📦 ${size} • 📅 ${date}
+                    📦 ${size} • ${extension}
                 </div>
                 <div class="image-actions">
                     <button class="action-btn view-btn" onclick="gallery.viewImage('${image.id}')">
                         👁️ Просмотр
                     </button>
-                    <button class="action-btn copy-btn" onclick="gallery.copyImageLink('${image.id}')">
+                    <button class="action-btn copy-btn" onclick="gallery.copyImageLink('${image.url}')">
                         📋 Копировать
                     </button>
-                    <button class="action-btn delete-btn" onclick="gallery.deleteImage('${image.id}')">
-                        🗑️ Удалить
-                    </button>
+                    <a href="${image.url}" download="${image.name}" class="action-btn download-btn">
+                        ⬇️ Скачать
+                    </a>
                 </div>
             </div>
         `;
@@ -255,153 +167,32 @@ class LocalImageGallery {
 
     // Просмотр изображения
     viewImage(imageId) {
-        const image = this.images.find(img => img.id === imageId);
+        const image = this.images.find(img => img.id == imageId);
         if (!image) return;
         
-        // Открываем в новом окне
-        const newWindow = window.open();
-        newWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>${image.name}</title>
-                <style>
-                    body { 
-                        margin: 0; 
-                        padding: 20px; 
-                        background: #2d3748; 
-                        display: flex; 
-                        flex-direction: column; 
-                        align-items: center; 
-                        justify-content: center; 
-                        min-height: 100vh;
-                    }
-                    img { 
-                        max-width: 90vw; 
-                        max-height: 80vh; 
-                        border: 3px solid white;
-                        border-radius: 10px;
-                        box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-                    }
-                    .info {
-                        color: white;
-                        text-align: center;
-                        margin-top: 20px;
-                        font-family: Arial, sans-serif;
-                        max-width: 800px;
-                    }
-                    h2 { margin-bottom: 10px; }
-                    .meta { color: #cbd5e0; margin: 10px 0; }
-                    button {
-                        background: #48bb78;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 5px;
-                        cursor: pointer;
-                        margin-top: 10px;
-                        font-size: 16px;
-                    }
-                    button:hover { background: #38a169; }
-                    .actions {
-                        display: flex;
-                        gap: 10px;
-                        margin-top: 15px;
-                    }
-                </style>
-            </head>
-            <body>
-                <img src="${image.data}" alt="${image.name}" 
-                     onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"400\" height=\"300\"><rect width=\"100%\" height=\"100%\" fill=\"%23f6f8fa\"/><text x=\"50%\" y=\"50%\" font-family=\"Arial\" font-size=\"16\" fill=\"%23999\" text-anchor=\"middle\" dy=\".3em\">${image.name}</text></svg>'">
-                <div class="info">
-                    <h2>${image.name}</h2>
-                    <div class="meta">Размер: ${this.formatFileSize(image.size)}</div>
-                    <div class="meta">Тип: ${image.type}</div>
-                    <div class="meta">Загружено: ${new Date(image.date).toLocaleString('ru-RU')}</div>
-                    <div class="actions">
-                        <button onclick="navigator.clipboard.writeText('${image.data.replace(/'/g, "\\'")}').then(() => alert('Ссылка скопирована!'))">
-                            📋 Скопировать ссылку
-                        </button>
-                        <button onclick="window.close()">Закрыть</button>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `);
+        window.open(image.url, '_blank');
     }
 
-    // Копирование ссылки на изображение
-    async copyImageLink(imageId) {
-        const image = this.images.find(img => img.id === imageId);
-        if (!image) {
-            this.showNotification('❌ Изображение не найдено');
-            return;
-        }
-        
+    // Копирование ссылки
+    async copyImageLink(url) {
         try {
-            // Копируем Data URL
-            await navigator.clipboard.writeText(image.data);
-            
-            // Показываем подтверждение
-            this.showButtonFeedback(imageId, '✅ Скопировано!');
-            this.showNotification(`Ссылка на "${image.name}" скопирована`);
-            
+            await navigator.clipboard.writeText(url);
+            showNotification('✅ Ссылка скопирована!');
         } catch (error) {
-            console.error('Ошибка копирования:', error);
-            
-            // Fallback для старых браузеров
-            try {
-                const textArea = document.createElement('textarea');
-                textArea.value = image.data;
-                textArea.style.position = 'fixed';
-                textArea.style.opacity = '0';
-                document.body.appendChild(textArea);
-                textArea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textArea);
-                
-                this.showButtonFeedback(imageId, '✅ Скопировано!');
-                this.showNotification(`Ссылка на "${image.name}" скопирована`);
-            } catch (fallbackError) {
-                this.showNotification('❌ Не удалось скопировать ссылку');
-                console.error(fallbackError);
-            }
+            // Fallback
+            const textArea = document.createElement('textarea');
+            textArea.value = url;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
+            showNotification('✅ Ссылка скопирована!');
         }
     }
 
-    // Удаление изображения
-    deleteImage(imageId) {
-        if (!confirm('Удалить это изображение из галереи?')) {
-            return;
-        }
-        
-        // Находим индекс изображения
-        const index = this.images.findIndex(img => img.id === imageId);
-        if (index === -1) {
-            this.showNotification('❌ Изображение не найдено');
-            return;
-        }
-        
-        // Получаем имя для уведомления
-        const imageName = this.images[index].name;
-        
-        // Удаляем из массива
-        this.images.splice(index, 1);
-        
-        // Обновляем отображение
-        this.displayGallery();
-        this.updateStats();
-        
-        // Сохраняем
-        this.saveToStorage();
-        
-        // Показываем уведомление
-        this.showNotification(`Изображение "${imageName}" удалено`);
-    }
-
-    // Форматирование размера файла
+    // Форматирование размера
     formatFileSize(bytes) {
-        if (typeof bytes !== 'number' || bytes === 0) return '0 Bytes';
+        if (typeof bytes !== 'number' || bytes === 0 || bytes === 'Неизвестно') return 'Неизвестно';
         
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -414,260 +205,132 @@ class LocalImageGallery {
     updateStats() {
         const totalImages = document.getElementById('totalImages');
         const totalSize = document.getElementById('totalSize');
-        const sortOrder = document.getElementById('sortOrder');
         
         if (totalImages) {
             totalImages.textContent = this.images.length;
         }
         
         if (totalSize) {
-            const totalBytes = this.images.reduce((sum, img) => sum + (img.size || 0), 0);
+            const totalBytes = this.images.reduce((sum, img) => {
+                return sum + (typeof img.size === 'number' ? img.size : 0);
+            }, 0);
             totalSize.textContent = this.formatFileSize(totalBytes);
         }
-        
-        if (sortOrder) {
-            sortOrder.textContent = 'Z→A';
-        }
     }
 
-    // Настройка drag and drop
-    setupDragAndDrop() {
-        const dropZone = document.querySelector('.file-manager');
-        if (!dropZone) return;
-        
-        const preventDefaults = (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-        };
-        
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, preventDefaults, false);
-        });
-        
-        ['dragenter', 'dragover'].forEach(eventName => {
-            dropZone.addEventListener(eventName, () => {
-                dropZone.style.borderColor = '#48bb78';
-                dropZone.style.transform = 'translateY(-5px)';
-                dropZone.style.background = '#f0fff4';
-            }, false);
-        });
-        
-        ['dragleave', 'drop'].forEach(eventName => {
-            dropZone.addEventListener(eventName, () => {
-                dropZone.style.borderColor = '#cbd5e0';
-                dropZone.style.transform = 'translateY(0)';
-                dropZone.style.background = '#f7fafc';
-            }, false);
-        });
-        
-        dropZone.addEventListener('drop', (e) => {
-            const dt = e.dataTransfer;
-            const files = dt.files;
-            
-            if (files.length) {
-                this.processFiles(Array.from(files));
-            }
-        }, false);
-    }
-
-    // Показ загрузки
-    showLoading() {
-        const gallery = document.getElementById('gallery');
-        if (!gallery) return;
-        
-        gallery.innerHTML = `
-            <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px;">
-                <div style="font-size: 48px; margin-bottom: 20px; animation: spin 1s linear infinite;">⏳</div>
-                <h3>Загрузка изображений...</h3>
-                <p>Пожалуйста, подождите</p>
-                <style>
-                    @keyframes spin {
-                        0% { transform: rotate(0deg); }
-                        100% { transform: rotate(360deg); }
-                    }
-                </style>
-            </div>
-        `;
-    }
-
-    // Показ уведомления
-    showNotification(message) {
-        // Создаем уведомление
-        const notification = document.createElement('div');
-        notification.className = 'notification';
-        notification.textContent = message;
-        
-        // Добавляем стили
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: linear-gradient(135deg, #48bb78, #38a169);
-            color: white;
-            padding: 15px 25px;
-            border-radius: 8px;
-            box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-            z-index: 1000;
-            animation: notificationSlideIn 0.3s ease;
-            font-weight: 500;
-            max-width: 400px;
-            word-break: break-word;
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // Добавляем стили для анимации если их нет
-        if (!document.querySelector('#notification-styles')) {
-            const style = document.createElement('style');
-            style.id = 'notification-styles';
-            style.textContent = `
-                @keyframes notificationSlideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
-                @keyframes notificationSlideOut {
-                    from { transform: translateX(0); opacity: 1; }
-                    to { transform: translateX(100%); opacity: 0; }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-        
-        // Удаляем через 3 секунды
-        setTimeout(() => {
-            notification.style.animation = 'notificationSlideOut 0.3s ease';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.parentNode.removeChild(notification);
-                }
-            }, 300);
-        }, 3000);
-    }
-
-    // Показ обратной связи для кнопки
-    showButtonFeedback(imageId, message) {
-        const card = document.querySelector(`.image-card[data-id="${imageId}"]`);
-        if (!card) return;
-        
-        const button = card.querySelector('.copy-btn');
-        if (!button) return;
-        
-        const originalText = button.innerHTML;
-        button.innerHTML = message;
-        button.classList.add('copied');
-        
-        setTimeout(() => {
-            button.innerHTML = originalText;
-            button.classList.remove('copied');
-        }, 2000);
-    }
-
-    // Очистка всех изображений
-    clearAll() {
-        if (!confirm('Удалить все изображения из галереи? Это действие нельзя отменить.')) {
-            return;
-        }
-        
-        // Очищаем массив
-        this.images = [];
-        
-        // Обновляем отображение
+    // Перезагрузка галереи
+    async reload() {
+        await this.loadImagesFromGitHub();
         this.displayGallery();
         this.updateStats();
-        
-        // Очищаем хранилище
-        localStorage.removeItem(this.storageKey);
-        
-        // Показываем уведомление
-        this.showNotification('Все изображения удалены');
-    }
-
-    // Проверка состояния хранилища
-    checkStorageHealth() {
-        try {
-            const data = JSON.stringify(this.images);
-            const size = new Blob([data]).size;
-            const maxSize = 5 * 1024 * 1024; // 5MB
-            
-            if (size > maxSize * 0.9) { // 90% от лимита
-                this.showNotification('⚠️ Хранилище почти заполнено. Рекомендуется удалить старые изображения.');
-            }
-            
-            return {
-                size: size,
-                items: this.images.length,
-                health: size < maxSize * 0.8 ? 'good' : 'warning'
-            };
-        } catch (error) {
-            return { error: error.message };
-        }
-    }
-
-    // Восстановление поврежденных изображений
-    repairImages() {
-        let repaired = 0;
-        
-        this.images = this.images.filter(img => {
-            if (!img.data || !img.data.startsWith('data:image/')) {
-                console.log('Удалено поврежденное изображение:', img.name);
-                return false;
-            }
-            
-            // Проверяем размер Data URL
-            if (img.data.length > 10 * 1024 * 1024) { // 10MB
-                console.log('Удалено слишком большое изображение:', img.name);
-                return false;
-            }
-            
-            repaired++;
-            return true;
-        });
-        
-        if (repaired < this.images.length) {
-            this.saveToStorage();
-            this.displayGallery();
-            this.showNotification(`Восстановлено ${repaired} изображений`);
-        }
+        showNotification('🔄 Галерея обновлена');
     }
 }
 
-// Создаем и экспортируем глобальный объект галереи
-window.gallery = new LocalImageGallery();
-
-// Глобальные функции для вызова из HTML
-function handleFileSelect(event) {
-    window.gallery.handleFileSelect(event);
-}
-
-function clearAllImages() {
-    window.gallery.clearAll();
-}
-
-function repairGallery() {
-    window.gallery.repairImages();
-}
-
-// Функция для проверки хранилища (можно вызвать из консоли)
-function checkStorage() {
-    return window.gallery.checkStorageHealth();
-}
-
-// Инициализация при загрузке страницы
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('Галерея загружена');
+// Вспомогательные функции
+function showLoading() {
+    const gallery = document.getElementById('gallery');
+    if (!gallery) return;
     
-    // Проверяем здоровье хранилища
+    gallery.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px;">
+            <div style="font-size: 48px; margin-bottom: 20px; animation: spin 1s linear infinite;">⏳</div>
+            <h3>Загрузка изображений с GitHub...</h3>
+            <p>Пожалуйста, подождите</p>
+            <style>
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            </style>
+        </div>
+    `;
+}
+
+function showError() {
+    const gallery = document.getElementById('gallery');
+    if (!gallery) return;
+    
+    gallery.innerHTML = `
+        <div style="grid-column: 1 / -1; text-align: center; padding: 60px 20px;">
+            <div style="font-size: 48px; margin-bottom: 20px;">❌</div>
+            <h3>Не удалось загрузить изображения</h3>
+            <p>Проверьте:</p>
+            <ul style="text-align: left; max-width: 500px; margin: 20px auto;">
+                <li>Файлы загружены в папку <code>images/</code> на GitHub</li>
+                <li>GitHub Pages включен в настройках репозитория</li>
+            </ul>
+            <button onclick="location.reload()" class="upload-btn">
+                🔄 Обновить страницу
+            </button>
+        </div>
+    `;
+}
+
+function showNotification(message) {
+    const notification = document.createElement('div');
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        background: linear-gradient(135deg, #48bb78, #38a169);
+        color: white;
+        padding: 15px 25px;
+        border-radius: 8px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        z-index: 1000;
+        animation: slideIn 0.3s ease;
+        font-weight: 500;
+    `;
+    
+    document.body.appendChild(notification);
+    
     setTimeout(() => {
-        const health = window.gallery.checkStorageHealth();
-        if (health.health === 'warning') {
-            console.warn('Внимание: хранилище почти заполнено', health);
-        }
-    }, 2000);
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
     
-    // Добавляем обработчик для восстановления при ошибках
-    window.addEventListener('error', (event) => {
-        if (event.target && event.target.tagName === 'IMG') {
-            console.log('Ошибка загрузки изображения:', event.target.src.substring(0, 100));
-        }
-    });
+    // Добавляем стили для анимации
+    if (!document.querySelector('#notification-styles')) {
+        const style = document.createElement('style');
+        style.id = 'notification-styles';
+        style.textContent = `
+            @keyframes slideIn {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+    }
+}
+
+// Создаем глобальный объект
+window.gallery = new GitHubGallery();
+
+// Функция для обновления галереи
+function reloadGallery() {
+    window.gallery.reload();
+}
+
+// Добавляем кнопку обновления в интерфейс
+document.addEventListener('DOMContentLoaded', function() {
+    // Добавляем кнопку обновления в stats
+    const stats = document.querySelector('.stats');
+    if (stats) {
+        const reloadBtn = document.createElement('button');
+        reloadBtn.className = 'upload-btn';
+        reloadBtn.style.margin = '0 10px';
+        reloadBtn.innerHTML = '🔄 Обновить';
+        reloadBtn.onclick = reloadGallery;
+        
+        const reloadItem = document.createElement('div');
+        reloadItem.className = 'stat-item';
+        reloadItem.appendChild(reloadBtn);
+        stats.appendChild(reloadItem);
+    }
 });
