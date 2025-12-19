@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Локальная галерея изображений</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+
+        header {
+            text-align: center;
+            padding: 30px 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .upload-area {
+            border: 3px dashed #667eea;
+            border-radius: 10px;
+            padding: 40px 20px;
+            text-align: center;
+            margin: 20px 0;
+            background: #f8f9fa;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .upload-area:hover {
+            background: #e9ecef;
+            border-color: #764ba2;
+        }
+
+        #fileInput {
+            display: none;
+        }
+
+        .upload-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 10px;
+        }
+
+        .upload-btn:hover {
+            background: #764ba2;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-between;
+            margin: 20px 0;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .image-card {
+            background: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.3s;
+        }
+
+        .image-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .image-container {
+            height: 200px;
+            overflow: hidden;
+            background: #f8f9fa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .image-container img {
+            max-width: 100%;
+            max-height: 100%;
+            object-fit: contain;
+        }
+
+        .image-info {
+            padding: 15px;
+        }
+
+        .image-name {
+            font-weight: bold;
+            margin-bottom: 5px;
+            word-break: break-all;
+            font-size: 0.9em;
+        }
+
+        .image-size {
+            color: #666;
+            font-size: 0.8em;
+            margin-bottom: 10px;
+        }
+
+        .image-actions {
+            display: flex;
+            gap: 10px;
+        }
+
+        .action-btn {
+            flex: 1;
+            padding: 8px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .copy-btn {
+            background: #28a745;
+            color: white;
+        }
+
+        .delete-btn {
+            background: #dc3545;
+            color: white;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #666;
+        }
+
+        footer {
+            text-align: center;
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #ddd;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        @media (max-width: 768px) {
+            .gallery {
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            }
+        }
+
+        @media (max-width: 480px) {
+            .gallery {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>🖼️ Локальная галерея изображений</h1>
+        <p>Работает прямо в браузере • Без сервера • Без установки</p>
+    </header>
+
+    <div class="container">
+        <div class="upload-area" onclick="document.getElementById('fileInput').click()">
+            <h3>📤 Загрузите изображения</h3>
+            <p>Нажмите или перетащите файлы сюда</p>
+            <p><small>Поддерживаются: JPG, PNG, GIF</small></p>
+            <br>
+            <button class="upload-btn">Выбрать файлы</button>
+            <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.gif" onchange="handleFileSelect(event)">
+        </div>
+
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="totalImages">0</div>
+                <div>Изображений</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="totalSize">0 KB</div>
+                <div>Общий размер</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value">Z→A</div>
+                <div>Сортировка</div>
+            </div>
+        </div>
+
+        <div id="gallery" class="gallery"></div>
+        
+        <div id="noImages" class="empty-state">
+            <h3>Галерея пуста</h3>
+            <p>Загрузите изображения, используя кнопку выше</p>
+        </div>
+    </div>
+
+    <footer>
+        <p>💡 Все изображения хранятся локально в вашем браузере</p>
+        <p>🔄 Для сортировки используйте имена файлов, начинающиеся с букв конца алфавита</p>
+    </footer>
+
+    <script>
+        // Простая галерея изображений
+        let images = [];
+        const storageKey = 'simpleImageGallery';
+
+        // Загрузка из localStorage
+        function loadFromStorage() {
+            try {
+                const saved = localStorage.getItem(storageKey);
+                if (saved) {
+                    images = JSON.parse(saved);
+                    console.log('Загружено изображений:', images.length);
+                }
+            } catch (error) {
+                console.error('Ошибка загрузки:', error);
+                images = [];
+            }
+        }
+
+        // Сохранение в localStorage
+        function saveToStorage() {
+            try {
+                localStorage.setItem(storageKey, JSON.stringify(images));
+            } catch (error) {
+                console.error('Ошибка сохранения:', error);
+            }
+        }
+
+        // Обработка выбора файлов
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (!files.length) return;
+
+            processFiles(Array.from(files));
+            event.target.value = '';
+        }
+
+        // Обработка файлов
+        function processFiles(files) {
+            const imageFiles = files.filter(file => 
+                file.type.startsWith('image/') && 
+                file.size <= 5 * 1024 * 1024 // 5MB максимум
+            );
+
+            if (imageFiles.length === 0) {
+                alert('Выберите изображения до 5MB (JPG, PNG, GIF)');
+                return;
+            }
+
+            // Показываем загрузку
+            showLoading();
+
+            // Обрабатываем каждое изображение
+            imageFiles.forEach(file => {
+                addImage(file);
+            });
+
+            // Обновляем отображение
+            displayGallery();
+            updateStats();
+            
+            // Сохраняем
+            saveToStorage();
+        }
+
+        // Добавление изображения
+        function addImage(file) {
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+                const imageData = {
+                    id: Date.now() + Math.random(),
+                    name: file.name,
+                    size: file.size,
+                    type: file.type,
+                    data: e.target.result, // Data URL
+                    date: new Date().toISOString()
+                };
+
+                // Добавляем в массив
+                images.push(imageData);
+                
+                // Сортируем от большего к меньшему по имени
+                sortImages();
+                
+                // Обновляем отображение после каждого файла
+                displayGallery();
+                updateStats();
+            };
+            
+            reader.readAsDataURL(file);
+        }
+
+        // Сортировка изображений
+        function sortImages() {
+            images.sort((a, b) => {
+                return b.name.localeCompare(a.name);
+            });
+        }
+
+        // Отображение галереи
+        function displayGallery() {
+            const gallery = document.getElementById('gallery');
+            const noImages = document.getElementById('noImages');
+            
+            if (images.length === 0) {
+                gallery.innerHTML = '';
+                noImages.style.display = 'block';
+                return;
+            }
+            
+            noImages.style.display = 'none';
+            gallery.innerHTML = '';
+            
+            images.forEach(image => {
+                const card = createImageCard(image);
+                gallery.appendChild(card);
+            });
+        }
+
+        // Создание карточки изображения
+        function createImageCard(image) {
+            const card = document.createElement('div');
+            card.className = 'image-card';
+            card.dataset.id = image.id;
+            
+            // Форматируем размер
+            const size = formatFileSize(image.size);
+            
+            card.innerHTML = `
+                <div class="image-container">
+                    <img src="${image.data}" alt="${image.name}" loading="lazy">
+                </div>
+                <div class="image-info">
+                    <div class="image-name" title="${image.name}">
+                        ${image.name}
+                    </div>
+                    <div class="image-size">
+                        ${size}
+                    </div>
+                    <div class="image-actions">
+                        <button class="action-btn copy-btn" onclick="copyImageLink('${image.id}')">
+                            Копировать
+                        </button>
+                        <button class="action-btn delete-btn" onclick="deleteImage('${image.id}')">
+                            Удалить
+                        </button>
+                    </div>
+                </div>
+            `;
+            
+            return card;
+        }
+
+        // Копирование ссылки
+        function copyImageLink(imageId) {
+            const image = images.find(img => img.id == imageId);
+            if (!image) return;
+            
+            navigator.clipboard.writeText(image.data).then(() => {
+                alert('Ссылка скопирована!');
+            }).catch(err => {
+                // Fallback для старых браузеров
+                const textArea = document.createElement('textarea');
+                textArea.value = image.data;
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                alert('Ссылка скопирована!');
+            });
+        }
+
+        // Удаление изображения
+        function deleteImage(imageId) {
+            if (!confirm('Удалить это изображение?')) return;
+            
+            const index = images.findIndex(img => img.id == imageId);
+            if (index !== -1) {
+                images.splice(index, 1);
+                displayGallery();
+                updateStats();
+                saveToStorage();
+            }
+        }
+
+        // Форматирование размера
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 Bytes';
+            const k = 1024;
+            const sizes = ['Bytes', 'KB', 'MB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        }
+
+        // Обновление статистики
+        function updateStats() {
+            const totalImages = document.getElementById('totalImages');
+            const totalSize = document.getElementById('totalSize');
+            
+            totalImages.textContent = images.length;
+            
+            const totalBytes = images.reduce((sum, img) => sum + img.size, 0);
+            totalSize.textContent = formatFileSize(totalBytes);
+        }
+
+        // Показ загрузки
+        function showLoading() {
+            const gallery = document.getElementById('gallery');
+            gallery.innerHTML = `
+                <div style="grid-column: 1 / -1; text-align: center; padding: 40px;">
+                    <div>Загрузка...</div>
+                </div>
+            `;
+        }
+
+        // Drag and drop
+        function setupDragAndDrop() {
+            const dropZone = document.querySelector('.upload-area');
+            if (!dropZone) return;
+            
+            ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, preventDefaults, false);
+            });
+            
+            ['dragenter', 'dragover'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.style.background = '#e9ecef';
+                }, false);
+            });
+            
+            ['dragleave', 'drop'].forEach(eventName => {
+                dropZone.addEventListener(eventName, () => {
+                    dropZone.style.background = '#f8f9fa';
+                }, false);
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                const files = e.dataTransfer.files;
+                if (files.length) {
+                    processFiles(Array.from(files));
+                }
+            }, false);
+        }
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Инициализация при загрузке страницы
+        function init() {
+            loadFromStorage();
+            displayGallery();
+            updateStats();
+            setupDragAndDrop();
+        }
+
+        // Запуск
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

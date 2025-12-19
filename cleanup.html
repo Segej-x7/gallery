@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Очистка галереи</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        button {
+            background: #f56565;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px;
+        }
+        
+        button:hover {
+            background: #e53e3e;
+        }
+        
+        .success {
+            color: #48bb78;
+            margin-top: 20px;
+        }
+        
+        .error {
+            color: #f56565;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🛠️ Восстановление галереи</h1>
+        <p>Эта страница поможет восстановить поврежденную галерею.</p>
+        
+        <div>
+            <button onclick="cleanLocalStorage()">🧹 Очистить localStorage</button>
+            <button onclick="location.href='index.html'">🏠 Вернуться к галерее</button>
+        </div>
+        
+        <div id="result"></div>
+    </div>
+    
+    <script>
+        function cleanLocalStorage() {
+            try {
+                // Получаем текущие данные
+                const data = localStorage.getItem('localImageGallery');
+                const parsed = data ? JSON.parse(data) : [];
+                
+                // Фильтруем только валидные Data URL
+                const validImages = parsed.filter(img => 
+                    img && img.data && img.data.startsWith('data:image/')
+                );
+                
+                // Сохраняем обратно
+                localStorage.setItem('localImageGallery', JSON.stringify(validImages));
+                
+                document.getElementById('result').innerHTML = 
+                    `<div class="success">✅ Успешно! Сохранено ${validImages.length} изображений из ${parsed.length}</div>`;
+                    
+                console.log('Очищено:', parsed.length - validImages.length, 'поврежденных изображений');
+            } catch (error) {
+                document.getElementById('result').innerHTML = 
+                    `<div class="error">❌ Ошибка: ${error.message}</div>`;
+                console.error(error);
+            }
+        }
+        
+        // Автоматически проверяем при загрузке
+        document.addEventListener('DOMContentLoaded', function() {
+            const data = localStorage.getItem('localImageGallery');
+            if (data) {
+                const parsed = JSON.parse(data);
+                document.getElementById('result').innerHTML = 
+                    `<p>Найдено ${parsed.length} изображений в хранилище</p>`;
+            }
+        });
+    </script>
+</body>
+</html>
